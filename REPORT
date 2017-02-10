@@ -41,6 +41,8 @@ __________________________________________________________________
 3) Describe any //CRUNCHY: extensions you implemented
 
 	- Add a 'shapeness' component:
+	
+		(I've attached a 3ds model in the zip file if needed for testing.)
 		
 		If a 3ds model is imported, it would be converted to an array of
 		vertices chosen from the 3ds model with the size of number of boids, 
