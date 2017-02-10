@@ -93,6 +93,7 @@ Written by: F. Estrada, Jun 2011.
 #include <string.h>
 #include <math.h>
 #include <unistd.h>
+#include <algorithm>
 
 // *************** GLOBAL VARIABLES *************************
 #define MAX_BOIDS 2000
@@ -105,10 +106,12 @@ float Boid_Location[MAX_BOIDS][3];	// Pointers to dynamically allocated
 float Boid_Velocity[MAX_BOIDS][3];	// Boid position & velocity data
 float Boid_Color[MAX_BOIDS][3];	 	// RGB colour for each boid
 float Boid_Rotation[MAX_BOIDS];
+float Model_Vertices[MAX_BOIDS][3];		// imported model vertices array got from modelVertices.
 bool Boid_Rotate_Up[MAX_BOIDS];
 float *modelVertices;                   // Imported model vertices
 int n_vertices;                         // Number of model vertices
-int butterfly_rot_up = true;	// Whether the butterflies should rotate upwards.
+int num_predators;											// Number of predators
+int predators[5];					// Array of predator Boids' indices.
 
 // *************** USER INTERFACE VARIABLES *****************
 int windowID;               // Glut window ID (for display)
@@ -122,6 +125,8 @@ float k_rule2;
 float k_rule3;
 float k_rule0;
 float shapeness;
+float r_predatory;
+float k_predatory;
 float global_rot;
 
 // ***********  FUNCTION HEADER DECLARATIONS ****************
@@ -146,6 +151,10 @@ float sign(float x){if (x>=0) return(1.0); else return(-1.0);}
 void updateBoid(int i);
 void drawBoid(int i);
 void HSV2RGB(float H, float S, float V, float *R, float *G, float *B);
+
+// Help functions
+bool exists(int *array, int element, int array_size);
+float getDistance(float p1[3], float p2[3]);
 
 // ******************** FUNCTIONS ************************
 
@@ -194,7 +203,14 @@ int main(int argc, char** argv)
       for (int i=0; i<n_vertices*3; i++) *(modelVertices+i)*=(SPACE_SCALE*.5);
      }
     }
-
+    
+    // Put vertex in model vertices into an array named Model_Vertices.
+    for (int i = 0; i < n_vertices; i++){
+			Model_Vertices[i][0] = modelVertices[i*3];
+			Model_Vertices[i][1] = modelVertices[i*3+1];
+			Model_Vertices[i][2] = modelVertices[i*3+2];
+		}
+		
     // Initialize Boid positions and velocity
     // Mind the SPEED_SCALE. You may need to change it to
     // achieve smooth animation - increase it if the
@@ -213,15 +229,33 @@ int main(int argc, char** argv)
 
      // Initialize boid colour to solid blue-ish
      // You may want to change this
-		 //Boid_Color[i][0]=.15;
-     //Boid_Color[i][1]=.15;
-     //Boid_Color[i][2]=1;
-		 Boid_Color[i][0]=drand48();
+		 Boid_Color[i][0]=0;
      Boid_Color[i][1]=drand48();
      Boid_Color[i][2]=1.0;
 		 Boid_Rotation[i]=-50.0+drand48()*120;
 		 Boid_Rotate_Up[i]=true;
     }
+    
+    // Pick and color the predators.
+    num_predators = std::min(nBoids, (int) (1 + drand48() * 5));
+		
+		// Init predators array to -1
+    for (int i = 0; i < num_predators; i++){
+			predators[i] = -1;
+		}
+		
+		for (int i = 0; i < num_predators; i++){
+			int predator = drand48() * nBoids;
+			bool duplicate = exists(predators, predator, num_predators);
+			while (duplicate){
+				predator = drand48() * nBoids;
+				duplicate = exists(predators, predator, num_predators);
+			}
+			Boid_Color[predator][0] = 1.0;	
+			Boid_Color[predator][1] = 0.0;
+			Boid_Color[predator][2] = 0.0;
+			predators[i] = predator;
+		}
 
     // Initialize glut, glui, and opengl
     glutInit(&argc, argv);
@@ -238,12 +272,25 @@ int main(int argc, char** argv)
     k_rule3=.15;
     k_rule0=.25;
     shapeness=0;
+		r_predatory=10;
+		k_predatory=0;
     global_rot=0;
 
     // Invoke the standard GLUT main event loop
     glutMainLoop();
     exit(0);         // never reached
 }
+
+
+bool exists(int *array, int element, int array_size){
+	for (int i = 0; i < array_size; i++){
+		if (array[i] == element){
+			return true;
+		}
+	}
+	return false;
+}
+
 
 // Initialize glut and create a window with the specified caption
 void initGlut(char* winName)
@@ -374,6 +421,23 @@ void initGlui()
           = glui->add_spinner("k_rule0", GLUI_SPINNER_FLOAT, &k_rule0);
       k0_spinner->set_speed(5.0);
       k0_spinner->set_float_limits(0.0, 1.0, GLUI_LIMIT_CLAMP);
+			
+			GLUI_Spinner *r_predatory_spinner
+          = glui->add_spinner("r_predatory", GLUI_SPINNER_FLOAT, &r_predatory);
+      r_predatory_spinner->set_speed(5.0);
+      r_predatory_spinner->set_float_limits(10, 50, GLUI_LIMIT_CLAMP);
+			
+			GLUI_Spinner *k_predatory_spinner
+          = glui->add_spinner("k_predatory", GLUI_SPINNER_FLOAT, &k_predatory);
+      k_predatory_spinner->set_speed(5.0);
+      k_predatory_spinner->set_float_limits(0.0, 1.0, GLUI_LIMIT_CLAMP);
+			
+			if (modelVertices != NULL){
+				GLUI_Spinner *shapeness_spinner
+						= glui->add_spinner("shapeness", GLUI_SPINNER_FLOAT, &shapeness);
+				shapeness_spinner->set_speed(5.0);
+				shapeness_spinner->set_float_limits(0.0, 1.0, GLUI_LIMIT_CLAMP);
+			}
 			
 			GLUI_Spinner *g_spinner
           = glui->add_spinner("global_rot", GLUI_SPINNER_FLOAT, &global_rot);
@@ -592,6 +656,8 @@ void updateBoid(int i)
 	init_velocity[1] = Boid_Velocity[i][1];
 	init_velocity[2] = Boid_Velocity[i][2];
 	
+	float distances[nBoids];		// distances[j] is the distance from Boid i to Boid j.
+	
  ///////////////////////////////////////////
  // TO DO: Complete this function to update
  // the Boid's velocity and location
@@ -684,8 +750,8 @@ void updateBoid(int i)
 
 	for (int j = 0; j < nBoids; j++){
 		if (j != i){
-			float distance = getDistance(Boid_Location[j], Boid_Location[i]);
-			if (distance <= r_rule1){
+			distances[j] = getDistance(Boid_Location[j], Boid_Location[i]);
+			if (distances[j] <= r_rule1){
 				center[0] += Boid_Location[j][0];
 				center[1] += Boid_Location[j][1];
 				center[2] += Boid_Location[j][2];
@@ -705,9 +771,11 @@ void updateBoid(int i)
 		center[2] = center[2] / count;
 	}
 	
-	Boid_Velocity[i][0] += (center[0] - Boid_Location[i][0]) * k_rule1;
-	Boid_Velocity[i][1] += (center[1] - Boid_Location[i][1]) * k_rule1;
-	Boid_Velocity[i][2] += (center[2] - Boid_Location[i][2]) * k_rule1;
+	// weight1 : the shorter the distance from Boid i to center of the mass, the larger the weight.
+	float weight1 = getDistance(center, Boid_Location[i])/r_rule1;
+	Boid_Velocity[i][0] += (center[0] - Boid_Location[i][0]) * k_rule1 * weight1;
+	Boid_Velocity[i][1] += (center[1] - Boid_Location[i][1]) * k_rule1 * weight1;
+	Boid_Velocity[i][2] += (center[2] - Boid_Location[i][2]) * k_rule1 * weight1;
 
  ///////////////////////////////////////////
  //
@@ -739,10 +807,12 @@ void updateBoid(int i)
 	
 	for (int j = 0; j < nBoids; j++){
 		if (j != i){
-			if (getDistance(Boid_Location[j], Boid_Location[i]) <= r_rule2){
-				Boid_Velocity[i][0] -= k_rule2 * (Boid_Location[j][0] - Boid_Location[i][0]);
-				Boid_Velocity[i][1] -= k_rule2 * (Boid_Location[j][1] - Boid_Location[i][1]);
-				Boid_Velocity[i][2] -= k_rule2 * (Boid_Location[j][2] - Boid_Location[i][2]);
+			if (distances[j] <= r_rule2){
+				// weight 2: the shorter the distance from Boid i to Boid j, the larger the weight.
+				float weight2 = (r_rule2 - distances[j])/r_rule2;
+				Boid_Velocity[i][0] -= weight2 * k_rule2 * (Boid_Location[j][0] - Boid_Location[i][0]);
+				Boid_Velocity[i][1] -= weight2 * k_rule2 * (Boid_Location[j][1] - Boid_Location[i][1]);
+				Boid_Velocity[i][2] -= weight2 * k_rule2 * (Boid_Location[j][2] - Boid_Location[i][2]);
 			}
 		}
 	}
@@ -781,8 +851,16 @@ void updateBoid(int i)
 	v3[2] = 0;
 	count = 0;
 	
+	float rule3_center[3];
+	rule3_center[0] = 0;
+	rule3_center[1] = 0;
+	rule3_center[2] = 0;
+	
 	for (int j = 0; j < nBoids; j++){
-		if ((j != i) and (getDistance(Boid_Location[i], Boid_Location[j]) <= r_rule3)){
+		if ((j != i) and (distances[j] <= r_rule3)){
+			rule3_center[0] += Boid_Location[j][0];
+			rule3_center[1] += Boid_Location[j][1];
+			rule3_center[2] += Boid_Location[j][2];
 			v3[0] += Boid_Velocity[j][0];
 			v3[1] += Boid_Velocity[j][1];
 			v3[2] += Boid_Velocity[j][2];
@@ -793,17 +871,25 @@ void updateBoid(int i)
   if (count == 0){
 		v3[0] = Boid_Velocity[i][0];
 		v3[1] = Boid_Velocity[i][1];
-		v3[2] = Boid_Velocity[i][2]; 
+		v3[2] = Boid_Velocity[i][2];
+		rule3_center[0] = Boid_Location[i][0];
+		rule3_center[1] = Boid_Location[i][1];
+		rule3_center[2] = Boid_Location[i][2];
 	}
 	else{
 		v3[0] = v3[0] / count;
 		v3[1] = v3[1] / count;
 		v3[2] = v3[2] / count;
+		rule3_center[0] = rule3_center[0] / count;
+		rule3_center[1] = rule3_center[1] / count;
+		rule3_center[2] = rule3_center[2] / count;
 	}
 	
-	Boid_Velocity[i][0] += k_rule3 * (v3[0] - init_velocity[0]);
-	Boid_Velocity[i][1] += k_rule3 * (v3[1] - init_velocity[1]);
-	Boid_Velocity[i][2] += k_rule3 * (v3[2] - init_velocity[2]);
+	//weight3:
+	float weight3 = (r_rule3 - getDistance(rule3_center, Boid_Location[i])) / r_rule3;
+	Boid_Velocity[i][0] += weight3 * k_rule3 * (v3[0] - init_velocity[0]);
+	Boid_Velocity[i][1] += weight3 * k_rule3 * (v3[1] - init_velocity[1]);
+	Boid_Velocity[i][2] += weight3 * k_rule3 * (v3[2] - init_velocity[2]);
 
  ///////////////////////////////////////////
  // Enforcing bounds on motion
@@ -874,8 +960,28 @@ void updateBoid(int i)
  //  *must ensure* you are using a freely
  //  distributable model!
  //
+ //  DONE!!!
  //////////////////////////////////////////
 
+	if (modelVertices != NULL){
+		Boid_Velocity[i][0] += shapeness * (Model_Vertices[i][0] - Boid_Location[i][0]);
+		Boid_Velocity[i][1] += shapeness * (Model_Vertices[i][1] - Boid_Location[i][1]); 
+		Boid_Velocity[i][2] += shapeness * (Model_Vertices[i][2] - Boid_Location[i][2]);
+	}
+ 
+ 
+  //Avoid predators.
+	if (!exists(predators, i, num_predators)){
+		for (int j = 0; j < num_predators; j++){
+			if (distances[predators[j]] <= r_predatory){
+				float weight_predatory = (r_predatory - distances[predators[j]])/r_predatory;
+				Boid_Velocity[i][0] -= (Boid_Location[predators[j]][0] - Boid_Location[i][0]) * k_predatory * weight_predatory;
+				Boid_Velocity[i][1] -= (Boid_Location[predators[j]][1] - Boid_Location[i][1]) * k_predatory * weight_predatory;
+				Boid_Velocity[i][2] -= (Boid_Location[predators[j]][2] - Boid_Location[i][2]) * k_predatory * weight_predatory;
+			}
+		}
+	}
+ 
  ///////////////////////////////////////////
  // Velocity Limit:
  //  This is already implemented. The goal
@@ -888,9 +994,9 @@ void updateBoid(int i)
  //  The speed clamping used here was determined
  // 'experimentally', i.e. I tweaked it by hand!
  ///////////////////////////////////////////
- Boid_Velocity[i][0]=sign(Boid_Velocity[i][0])*sqrt(fabs(Boid_Velocity[i][0])/10);
- Boid_Velocity[i][1]=sign(Boid_Velocity[i][1])*sqrt(fabs(Boid_Velocity[i][1])/10);
- Boid_Velocity[i][2]=sign(Boid_Velocity[i][2])*sqrt(fabs(Boid_Velocity[i][2])/10);
+ Boid_Velocity[i][0]=sign(Boid_Velocity[i][0])*sqrt(fabs(Boid_Velocity[i][0])/8);
+ Boid_Velocity[i][1]=sign(Boid_Velocity[i][1])*sqrt(fabs(Boid_Velocity[i][1])/8);
+ Boid_Velocity[i][2]=sign(Boid_Velocity[i][2])*sqrt(fabs(Boid_Velocity[i][2])/8);
 
  ///////////////////////////////////////////
  //
@@ -917,7 +1023,8 @@ void updateBoid(int i)
  // QUESTION: Why add inertia at the end and
  //  not at the beginning?
  ///////////////////////////////////////////
-
+	
+	
  ///////////////////////////////////////////
  //
  // TO DO:
@@ -952,6 +1059,7 @@ void updateBoid(int i)
  //   distance and the weight decays as a
  //   function of the corresponding r_rule
  //   parameter. [Check]
+ //   DONE!!!
  //
  // - Add a few 'predatory boids'. Select
  //   a couple of boids randomly. These become
@@ -962,6 +1070,7 @@ void updateBoid(int i)
  //   Be sure to plot the predatory boids
  //   differently so we can easily see
  //   who they are.
+ //		DONE!!!
  //
  // - Make it go FAST. Consider and implement
  //   ways to speed-up the boid update. Hint:
@@ -985,7 +1094,6 @@ void drawBoid(int i)
     This function draws a boid i at the specified location.
  */
 	float degree = atan2(Boid_Velocity[i][0], Boid_Velocity[i][2]) * 180 / PI + 180;
-	//printf("degree: %f\n", degree);
  ///////////////////////////////////////////
  // LEARNING OBJECTIVES:
  //
@@ -1122,22 +1230,22 @@ void drawBoid(int i)
  gluPartialDisk(leftWing2,0,2,50,50, -95, -75);
  glPopMatrix();
  
- 
- // Boid_Rotation[i] should be in the range of [-30, 30].
+  
+  float changeDegree = 4;
 	if (Boid_Rotation[i] <= -50.0){
-		Boid_Rotation[i] += 2;
+		Boid_Rotation[i] += changeDegree;
 		Boid_Rotate_Up[i] = true;
 	}
 	else if (Boid_Rotation[i] >= 70.0){
-		Boid_Rotation[i] -= 2;
+		Boid_Rotation[i] -= changeDegree;
 		Boid_Rotate_Up[i] = false;
 	}
 	else {
 		if (Boid_Rotate_Up[i]){
-			Boid_Rotation[i] += 2;
+			Boid_Rotation[i] += changeDegree;
 		}
 		else{
-			Boid_Rotation[i] -= 2;
+			Boid_Rotation[i] -= changeDegree;
 		}
 	}
 
@@ -1151,6 +1259,7 @@ void drawBoid(int i)
  // move their fins. Do something appropriate
  // that looks good for extra credit.
  //
+ //	DONE!
  ///////////////////////////////////////////
 
  ///////////////////////////////////////////

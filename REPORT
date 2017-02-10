@@ -5,25 +5,95 @@ In this file you must:
 __________________________________________________________________
 1) Describe *briefly* and *concisely* what parts of the assignment
    you found easier, harder, and/or tricky to get right
-
-
+	
+	Note: My implementation looks nicer if nBoids <= 50.
+	
+	I found that it was easy to implement the rules since the psudocode
+	was provided and reference page was very clear on each rule.
+	The rotation on drawing and animation is quite tricky because I was
+	not sure what the order of transformation was applied to the matrix 
+	and it was triky to figure out how much degree to rotate on a specific
+	axis for each part of the butterfly (my boid).
+	The hard part is to optimize the program, since there are a lot of
+	calculations involved in updating the boid's location and animation,
+	The program got very slow on 2000 boids. I did rotation for three times
+	with respect to three axis for each wing of the butterfly, but I think
+	it could be done more efficiently if I just rotate it once on one vector.
+	However, it was hard for me to get the right coordinates for the vector
+	and the right degree.
 
 
 __________________________________________________________________
 2) Answer any //QUESTION: items noted in the code
 
+	- Is this the optimal way to implement this
+    rule? can you see any problems or ways
+    to improve this bit?
+   
+    Weight can be added to each rule to make the movement more natural as mentioned in CRUNCHY part.
+    Distance could be calculated in an approximation way to get less calculations.
+   
+	- Why add inertia at the end and not at the beginning?
 
-
-
-
-
-
+		Because we don't want the inertia to be affected by the velocity limit (sqrt).
+		
 __________________________________________________________________
 3) Describe any //CRUNCHY: extensions you implemented
 
+	- Add a 'shapeness' component:
+		
+		If a 3ds model is imported, it would be converted to an array of
+		vertices chosen from the 3ds model with the size of number of boids, 
+		and would be stored as in a global variable so that I could access
+		it within the update boids function.
+		
+		Everytime I update a boid with index i, I would add a velocity adjusted
+		by a small factor shapeness (within range [0, 1]) towards the vertex with
+		index i in the model vertices array.
+		
+		The factor shapeness is added to spinner that can be adjusted in controller.
+		shapeness has an initial value 0.
+		
+	
+	- Make the updates smoother:
+	
+		I added three weights to each of the three rules, each weight is in range [0, 1],
+		so the justified velocity is not only applied by factor k_rule, but k_rule * weight.
+		
+		For rule 1, the larger the distance between Boid i and center of mass, the larger the weight.
+		Because if a boid is already close to the center of mass, it needs less velocity to reach the center.
+		
+		For rule 2, the larger the distance between Boid i and Boid j, the smaller the weight.
+		Because if two boids are closer, they would move apart faster.
 
-
-
+		For rule 3, the larger the distance between Boid i and the center of all boids within r_rule3,
+		the smaller the weight.
+		Because I think that the boid will be affected less if it's further from the center.
+		
+		
+	- Add a few 'predatory boids':
+	
+		I added n predatory boids where n = min(total number of boids, random int from 1 to 5).
+		The predatory boids are red and the rest are bluish.
+		
+		The boids will be affected by the predators only if their distance is within r_predatory.
+		r_predatory can be adjusted in spinner/controller. 
+		
+		The influence of the predators is adjusted by a factor named k_predatory (which is also in controller),
+		the larger the k_predatory, the stronger the influence.
+		
+		Additionally, the closer the boid and the predators, the faster the boid would fly away from the predators.
+		Therefore, I have weight_predators implemented in the program to adjust this effect.
+		
+		
+	- Animate boids:
+		
+		I added animations on butterflies so that they could flutter their wings. Every butterfly has a random 
+		initial degree for wings.
+		(I wanted to set the fluttering rate random everytime to make it more natural, but I was afraid that 
+		the random generator would decrease performance.)
+		
+		I also rotated the butterflies to make them always facing the direction they are moving.
 
 __________________________________________________________________
 
@@ -31,15 +101,25 @@ __________________________________________________________________
 
 a) What is the time complexity of the boid update (in big Oh notation),
    justify.
+   
+   The time complexity of the boid update for each frame is bid O(n^2)
+   where n is the number of boids.
 
 b) What could you do to make the update more efficient?
+
+	 I would make the drawing simpler (less transformations).
 
 c) What is the greatest bottleneck of the program:
 
     Is it the boid update code?
     Or is it the boid display code?
+    
+    It is the boid display code about transformation.
 
     Why is that? justify your answer.
+    
+    Because it takes me some time to figure out the order of transformation and 
+    how push and pop matrix works.
 
 d) How would you adapt the idea behind Boids to swarms of running
    creatures (e.g. a herd of charging animals, an army of CGI
@@ -47,3 +127,6 @@ d) How would you adapt the idea behind Boids to swarms of running
    specific conditions you would need to add to the simulation
    that are different from your Boids implementation
 
+	 Most swarms of running creatures would adapt rule 2 which is avoiding being too close
+	 to each other. I think mostly we just need to identify the rules and add relevent 
+	 vector to previous velocity to keep updating.
